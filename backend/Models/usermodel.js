@@ -27,10 +27,6 @@ const userSchema= new mongoose.Schema({
             enum: ["user", "ngo", "vet", "admin"],
             default: "user",
         },
-   avatar: {
-            type: String,
-            default: "",
-        },
 },{timestamps:true});
 
 userSchema.pre("save", async function(next){

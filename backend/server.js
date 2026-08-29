@@ -1,5 +1,5 @@
+import "dotenv/config";
 import express from "express";
-import dotenv from "dotenv";
 import helmet from "helmet";
 import morgan from "morgan";
 import cors from "cors"
@@ -7,8 +7,8 @@ import cookieParser from "cookie-parser";
 import connectDB from "./Config/db.js";
 import userRoutes from "./Routes/userroutes.js" 
 import { errorHandler } from "./middlewares/errorMiddleware.js";
+import Ngorouter  from './Routes/ngoroutes.js'
 
-dotenv.config();
 
 connectDB();
 
@@ -29,6 +29,7 @@ app.use(morgan('dev'));
 
 // API Routes
 app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/ngo", Ngorouter);
 
 app.get('/',(req,res)=>{
     res.send('App is running')

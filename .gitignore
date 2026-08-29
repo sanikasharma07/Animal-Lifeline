@@ -12,3 +12,6 @@ coverage/
 npm-debug.log*
 
 .DS_Store
+
+public/temp/*
+!public/temp/.gitkeep

@@ -27,3 +27,12 @@ export const verifyJWT = asyncHandler (async (req,res,next)=>{
 
    
 });
+// Middleware to check if the logged-in user has the NGO role
+export const isNgo = asyncHandler(async (req, res, next) => {
+    // req.user is already provided by verifyJWT, which runs right before this
+    if (req.user && req.user.role === "ngo") {
+        next(); // They are an NGO, let them proceed
+    } else {
+        throw new ApiError(403, "Access denied: You must be registered as an NGO to perform this action");
+    }
+});

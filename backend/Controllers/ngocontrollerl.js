@@ -85,6 +85,20 @@ export const createorupdateNgoProfile = asyncHandler(async(req,res)=>{
             servicesProvided: parsedServices,
             documents
         })
+        await User.findByIdAndUpdate(req.user._id, { role: "ngo" });
         return res.status(201).json(new ApiResponse(201, profile, "NGO Profile created successfully. Pending Admin verification."));
     }
+});
+// @desc    Get all VERIFIED NGOs (Publicly accessible)
+// @route   GET /api/v1/ngo/verified
+// @access  Public or Logged-in Users
+export const getVerifiedNgos = asyncHandler(async (req, res) => {
+    // 1. We only want NGOs where verificationStatus is "verified"
+    const verifiedNgos = await Ngo.find({ verificationStatus: "verified" })
+        .populate("user", "name email phone") // Grab contact details from User model
+        .select("-documents"); // SECURITY: Never send PAN/Registration docs to the frontend!
+
+    return res.status(200).json(
+        new ApiResponse(200, verifiedNgos, "Verified NGOs fetched successfully")
+    );
 });

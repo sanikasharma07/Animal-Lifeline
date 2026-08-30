@@ -8,6 +8,7 @@ import connectDB from "./Config/db.js";
 import userRoutes from "./Routes/userroutes.js" 
 import { errorHandler } from "./middlewares/errorMiddleware.js";
 import Ngorouter  from './Routes/ngoroutes.js'
+import adminRoutes from "./Routes/adminroutes.js";
 
 
 connectDB();
@@ -30,6 +31,7 @@ app.use(morgan('dev'));
 // API Routes
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/ngo", Ngorouter);
+app.use("/api/v1/admin", adminRoutes);
 
 app.get('/',(req,res)=>{
     res.send('App is running')

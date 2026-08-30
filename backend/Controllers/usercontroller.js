@@ -37,7 +37,7 @@ const user = await User.create({
         email,
         password,
         phone,
-        role: role || "user"
+        role: "user"
 });
 
 // Verify if user was created successfully

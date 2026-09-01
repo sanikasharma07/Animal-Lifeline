@@ -11,6 +11,7 @@ import Ngorouter  from './Routes/ngoroutes.js'
 import adminRoutes from "./Routes/adminroutes.js";
 import emergencyRoutes from "./Routes/emergencyroutes.js";
 import volunteerRouter from "./Routes/volunteerroutes.js";
+import animalrouter from "./Routes/animalroutes.js";
 
 connectDB();
 
@@ -35,7 +36,7 @@ app.use("/api/v1/ngo", Ngorouter);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/emergency", emergencyRoutes);
 app.use("/api/v1/volunteer", volunteerRouter);
-
+app.use("/api/v1/animals", animalrouter);
 app.get('/',(req,res)=>{
     res.send('App is running')
 })

@@ -2,10 +2,10 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import {Ngo} from "../Models/ngomodel.js"
-import { EmergencyCase } from "../Models/emergencycasemodel.js";
+import { EmergencyCase } from "../Models/emergencycase.js";
 import {VolunteerRequest} from "../Models/volunteermodel.js"
 
-export const requestEmergencyVolunteers = asynchandler(async(req,res)=>{
+export const requestEmergencyVolunteers = asyncHandler(async(req,res)=>{
     const {id} = req.params
     const { volunteersNeeded, helpRequired } = req.body;
 

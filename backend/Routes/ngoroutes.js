@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { createorupdateNgoProfile , getVerifiedNgos } from "../Controllers/ngocontrollerl.js";
+import { createorupdateNgoProfile , getVerifiedNgos , getNearbyNgos} from "../Controllers/ngocontrollerl.js";
 import { isNgo, verifyJWT} from "../middlewares/authmiddleware.js"
 import { upload } from "../middlewares/multermiddleware.js";
+  
 
 const Ngorouter= Router();
 //"For every route defined after this line in NgoRouter, first make sure the user is logged in, and then make sure they're an NGO."
@@ -18,5 +19,6 @@ Ngorouter.route("/profile").post(
 );
 
 Ngorouter.route("/verified").get(getVerifiedNgos);
+Ngorouter.route("/nearby").get(getNearbyNgos);
 
 export default Ngorouter;

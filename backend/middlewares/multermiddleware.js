@@ -16,6 +16,7 @@ const fileFilter  = (req,file,cb) => {
         "image/jpg",
         "image/png",
         "application/pdf",
+        "application/octet-stream"
     ];
 
 if( allowedMimeTypes.includes(file.mimetype)){

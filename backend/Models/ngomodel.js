@@ -30,6 +30,11 @@ const ngoSchema=  new mongoose.Schema({
             state: { type: String, required: true },
             pinCode: String,
         },
+        // Add this inside your NGO schema (maybe right below address)
+location: {
+    type: { type: String, enum: ["Point"], default: "Point" },
+    coordinates: { type: [Number] }, // [longitude, latitude]
+},
         // 4. Operational Information
         animalsHandled: {
             type: [String], // e.g., ["Dogs", "Cats", "Cattle"]
@@ -62,4 +67,6 @@ const ngoSchema=  new mongoose.Schema({
             rejectionReason: String,
 },{timestamps:true})
 
+// This tells MongoDB to index the earth as a sphere for accurate distance math
+ngoSchema.index({ location: "2dsphere" });
 export const Ngo= mongoose.model("Ngo", ngoSchema);

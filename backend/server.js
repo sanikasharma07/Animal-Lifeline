@@ -10,6 +10,7 @@ import { errorHandler } from "./middlewares/errorMiddleware.js";
 import Ngorouter  from './Routes/ngoroutes.js'
 import adminRoutes from "./Routes/adminroutes.js";
 import emergencyRoutes from "./Routes/emergencyroutes.js";
+import volunteerRouter from "./Routes/volunteerroutes.js";
 
 connectDB();
 
@@ -33,6 +34,7 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/ngo", Ngorouter);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/emergency", emergencyRoutes);
+app.use("/api/v1/volunteer", volunteerRouter);
 
 app.get('/',(req,res)=>{
     res.send('App is running')

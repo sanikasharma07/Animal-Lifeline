@@ -129,3 +129,30 @@ export const requestAiCare = asyncHandler(async (req, res) => {
         new ApiResponse(200, emergencyCase.aiCare, "First-aid guidance generated successfully.")
     );
 });
+
+// @desc    Delete/Cancel an Emergency Case
+// @route   DELETE /api/v1/emergency/:id
+export const deleteEmergencyCase = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const emergencyCase = await EmergencyCase.findById(id);
+    if (!emergencyCase) {
+        throw new ApiError(404, "Emergency case not found.");
+    }
+
+    // Security: Only the user who reported it can delete it
+    if (String(emergencyCase.reporter) !== String(req.user._id)) {
+        throw new ApiError(403, "You can only delete emergencies you reported.");
+    }
+
+    // Optional: Prevent deletion if an NGO is already on the way
+    if (emergencyCase.assignedNgo) {
+        throw new ApiError(400, "An NGO has already accepted this case. Please contact them directly to cancel.");
+    }
+
+    await emergencyCase.deleteOne();
+
+    return res.status(200).json(
+        new ApiResponse(200, null, "Emergency case cancelled and deleted successfully.")
+    );
+});

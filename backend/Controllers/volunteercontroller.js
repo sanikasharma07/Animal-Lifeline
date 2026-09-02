@@ -40,3 +40,30 @@ export const requestEmergencyVolunteers = asyncHandler(async(req,res)=>{
     return res.status(201).json(new ApiResponse(201, volunteerReq, "Volunteer request broadcasted to the community successfully!")
     );
 });
+
+// @desc    Close or Delete a Volunteer Request
+// @route   DELETE /api/v1/volunteer/:id
+export const deleteVolunteerRequest = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const ngoProfile = await Ngo.findOne({ user: req.user._id });
+    if (!ngoProfile) {
+        throw new ApiError(403, "NGO Profile not found.");
+    }
+
+    const volunteerReq = await VolunteerRequest.findById(id);
+    if (!volunteerReq) {
+        throw new ApiError(404, "Volunteer request not found.");
+    }
+
+    // Security: Only the NGO that created it can delete it
+    if (String(volunteerReq.ngo) !== String(ngoProfile._id)) {
+        throw new ApiError(403, "You can only delete your own volunteer requests.");
+    }
+
+    await volunteerReq.deleteOne();
+
+    return res.status(200).json(
+        new ApiResponse(200, null, "Volunteer request closed and removed.")
+    );
+});

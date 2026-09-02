@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { reportEmergency , acceptEmergencyCase , requestAiCare} from "../Controllers/emergencycontroller.js";
+import { reportEmergency , acceptEmergencyCase , requestAiCare , deleteEmergencyCase} from "../Controllers/emergencycontroller.js";
 import { verifyJWT } from "../middlewares/authmiddleware.js"; 
 import { upload } from "../middlewares/multermiddleware.js"; // Your multer setup
 
@@ -13,5 +13,5 @@ emergencyrouter.route("/report").post(
 );
 emergencyrouter.route("/:id/accept").patch(verifyJWT, acceptEmergencyCase);
 emergencyrouter.route("/:id/ai-care").patch(verifyJWT, requestAiCare);
-
+emergencyrouter.route("/:id").delete(verifyJWT, deleteEmergencyCase);
 export default emergencyrouter;

@@ -24,9 +24,15 @@ const userSchema= new mongoose.Schema({
    },
    role: {
             type: String,
-            enum: ["user", "ngo", "vet" , "admin"],
+            enum: ["user", "ngo", "admin"],
             default: "user",
         },
+impact: {
+    rescuesReported: { type: Number, default: 0 },
+    suppliesDonated: { type: Number, default: 0 },
+    campaignsFunded: { type: Number, default: 0 },
+    volunteerHours: { type: Number, default: 0 }
+}
 },{timestamps:true});
 
 userSchema.pre("save", async function(next){

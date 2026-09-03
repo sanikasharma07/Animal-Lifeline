@@ -126,3 +126,72 @@ export const logoutUser = asyncHandler (async (req,res) =>{
 
     
 });
+export const getUserImpactProfile = asyncHandler(async (req, res) => {
+    const userId = req.user._id;
+
+    // 1. Fetch Emergencies Reported by User
+    const emergencies = await EmergencyCase.find({ reporter: userId })
+        .populate("assignedNgo", "organizationName")
+        .select("species status createdAt");
+
+    // 2. Fetch Fulfilled Supply Pledges
+    const supplies = await SupplyRequest.find({
+        "pledges.user": userId,
+        "pledges.status": "Received"
+    }).populate("ngo", "organizationName")
+      .select("title pledges createdAt");
+
+    // 3. Fetch Successful Donations
+    const donations = await DonationCampaign.find({
+        "donors.user": userId
+    }).populate("ngo", "organizationName")
+      .select("title donors createdAt");
+
+    // 4. Standardize the data into a single Timeline Array
+    let timeline = [];
+
+    emergencies.forEach(emp => {
+        timeline.push({
+            type: "Emergency",
+            title: `Reported an injured ${emp.species}`,
+            ngoName: emp.assignedNgo ? emp.assignedNgo.organizationName : "Pending NGO",
+            status: emp.status,
+            date: emp.createdAt
+        });
+    });
+
+    supplies.forEach(sup => {
+        // Find the specific pledge for this user
+        const userPledge = sup.pledges.find(p => String(p.user) === String(userId));
+        if (userPledge) {
+            timeline.push({
+                type: "Supply",
+                title: `Donated ${userPledge.quantity} units for: ${sup.title}`,
+                ngoName: sup.ngo.organizationName,
+                date: userPledge.pledgedAt
+            });
+        }
+    });
+
+    donations.forEach(camp => {
+        const userDonation = camp.donors.find(d => String(d.user) === String(userId));
+        if (userDonation) {
+            timeline.push({
+                type: "Donation",
+                title: `Funded ₹${userDonation.amount} towards: ${camp.title}`,
+                ngoName: camp.ngo.organizationName,
+                date: userDonation.donatedAt
+            });
+        }
+    });
+
+    // Sort the entire timeline from newest to oldest
+    timeline.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return res.status(200).json(
+        new ApiResponse(200, {
+            lifetimeStats: req.user.impact,
+            timeline
+        }, "User impact profile generated.")
+    );
+});

@@ -1,5 +1,5 @@
 import {Router} from "express";
-import { registerUser , loginuser, logoutUser } from "../Controllers/usercontroller.js";
+import { registerUser , loginuser, logoutUser  , getUserImpactProfile} from "../Controllers/usercontroller.js";
 import { verifyJWT } from "../middlewares/authmiddleware.js";
 
 

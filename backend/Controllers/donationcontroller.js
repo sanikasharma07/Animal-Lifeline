@@ -1,10 +1,16 @@
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import {Ngo} from "../Models/ngomodel.js";
+import { Ngo } from "../Models/ngomodel.js";
 import { DonationCampaign } from "../Models/donationmodel.js";
 import { uploadOnCloudinary } from "../Utils/cloudinary.js";
+import Razorpay from "razorpay";
 
+// Initialize Razorpay Instance
+const razorpayInstance = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET
+});
 
 // @desc    Create a Fundraising Campaign (NGO Only)
 // @route   POST /api/v1/donations/campaigns
@@ -36,14 +42,14 @@ export const getActiveCampaigns = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, campaigns, "Active campaigns fetched."));
 });
 
-// @desc    Simulate a successful donation (User)
+// @desc    Initiate a donation (Creates Razorpay Order)
 // @route   POST /api/v1/donations/campaigns/:id/donate
 export const processDonation = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { amount } = req.body;
+    const { amount } = req.body; // Expecting amount in INR
 
-    if (!amount || amount <= 50) {
-        throw new ApiError(400, "Donation amount must be greater than 50.");
+    if (!amount || amount < 50) {
+        throw new ApiError(400, "Donation amount must be at least ₹50.");
     }
 
     const campaign = await DonationCampaign.findById(id);
@@ -51,7 +57,62 @@ export const processDonation = asyncHandler(async (req, res) => {
         throw new ApiError(404, "Campaign not found or closed.");
     }
 
-})
+    // Create Razorpay Order options
+    const options = {
+        amount: Math.round(amount * 100), // Convert INR to paisa
+        currency: 'INR',
+        receipt: `receipt_campaign_${campaign._id}_${Date.now()}`
+    };
+
+    // Generate order via Razorpay
+    const order = await razorpayInstance.orders.create(options);
+    if (!order) {
+        throw new ApiError(500, "Failed to generate Razorpay order.");
+    }
+
+    return res.status(200).json(
+        new ApiResponse(200, { order, campaignId: campaign._id }, "Donation initiated successfully.")
+    );
+});
+
+// @desc    Verify Razorpay Payment and Update Campaign Funds
+// @route   POST /api/v1/donations/verify
+export const verifyDonation = asyncHandler(async (req, res) => {
+    const { razorpay_order_id, campaignId, isCancelled } = req.body;
+    
+    // Handle user cancelling the payment window
+    if (isCancelled) {
+        throw new ApiError(400, "Donation payment was cancelled.");
+    }
+
+    // Fetch actual payment status directly from Razorpay for security
+    const orderinfo = await razorpayInstance.orders.fetch(razorpay_order_id);
+    
+    if (orderinfo.status === 'paid') {
+        const campaign = await DonationCampaign.findById(campaignId);
+        if (!campaign) {
+            throw new ApiError(404, "Campaign not found.");
+        }
+
+        // Add the donation amount to the campaign (converting paisa back to INR)
+        const donationAmount = orderinfo.amount / 100;
+        campaign.raisedAmount = (campaign.raisedAmount || 0) + donationAmount;
+
+        // Automatically close campaign if target is met or exceeded
+        if (campaign.raisedAmount >= campaign.targetAmount) {
+            campaign.status = "Closed";
+        }
+
+        await campaign.save();
+
+        return res.status(200).json(
+            new ApiResponse(200, campaign, `Thank you! ₹${donationAmount} donated successfully.`)
+        );
+    } else {
+        throw new ApiError(400, "Payment verification failed.");
+    }
+});
+
 // @desc    Delete a Fundraising Campaign
 // @route   DELETE /api/v1/donations/campaigns/:id
 export const deleteCampaign = asyncHandler(async (req, res) => {
@@ -67,12 +128,10 @@ export const deleteCampaign = asyncHandler(async (req, res) => {
         throw new ApiError(404, "Campaign not found.");
     }
 
-    // Security 1: Only the NGO that created it can delete it
     if (String(campaign.ngo) !== String(ngoProfile._id)) {
         throw new ApiError(403, "You can only delete your own campaigns.");
     }
 
-    // Security 2: Financial Safeguard
     if (campaign.raisedAmount > 0) {
         throw new ApiError(
             400, 
@@ -126,8 +185,6 @@ export const uploadCampaignImpact = asyncHandler(async (req, res) => {
         uploadedAt: Date.now()
     };
     
-  
-  
     await campaign.save();
 
     return res.status(200).json(

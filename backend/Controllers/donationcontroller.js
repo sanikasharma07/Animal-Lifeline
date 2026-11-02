@@ -7,6 +7,51 @@ import { uploadOnCloudinary } from "../Utils/cloudinary.js";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import { User } from "../Models/usermodel.js";
+import { notifyUser, notifyUsers } from "../Utils/notifications.js";
+
+// Notify the donor and the campaign's NGO after a payment is recorded
+// for the first time (verify or webhook). "updated" is the campaign
+// after the atomic $ne recording, so a replay that finds the payment
+// already recorded never reaches this helper and never re-notifies.
+const notifyDonationRecorded = async (updated, donorUserId, donationAmount) => {
+    const ngoProfile = await Ngo.findById(updated.ngo);
+    const goalReached = updated.status === "Goal Reached";
+    await notifyUser(donorUserId, {
+        type: "DonationSuccess",
+        title: "Donation successful",
+        message: `Thank you! Your donation of \u20B9${donationAmount} to "${updated.title}" was recorded.`,
+        relatedType: "DonationCampaign",
+        relatedId: updated._id,
+    });
+    if (ngoProfile) {
+        await notifyUser(ngoProfile.user, {
+            type: "DonationReceived",
+            title: "New donation received",
+            message: `Your campaign "${updated.title}" received a donation of \u20B9${donationAmount}.`,
+            relatedType: "DonationCampaign",
+            relatedId: updated._id,
+        });
+    }
+    if (goalReached) {
+        const donorIds = [...new Set(updated.donors.map((d) => String(d.user)))];
+        await notifyUsers(donorIds, {
+            type: "CampaignGoalReached",
+            title: "Campaign goal reached",
+            message: `The campaign "${updated.title}" has reached its fundraising goal. Thank you for your support!`,
+            relatedType: "DonationCampaign",
+            relatedId: updated._id,
+        });
+        if (ngoProfile) {
+            await notifyUser(ngoProfile.user, {
+                type: "CampaignGoalReached",
+                title: "Campaign goal reached",
+                message: `Your campaign "${updated.title}" has reached its fundraising goal.`,
+                relatedType: "DonationCampaign",
+                relatedId: updated._id,
+            });
+        }
+    }
+};
 
 // Created lazily (on first use) so the server still boots if the Razorpay keys
 // are missing. Only the payment endpoints need them.
@@ -48,7 +93,7 @@ export const createCampaign = asyncHandler(async (req, res) => {
 // @route   GET /api/v1/donations/campaigns
 export const getActiveCampaigns = asyncHandler(async (req, res) => {
     
-    const campaigns = await DonationCampaign.find({ status: "Active" })
+    const campaigns = await DonationCampaign.find({ status: "Active", removedByAdmin: { $ne: true } })
         .select("-donors") 
         .populate("ngo", "organizationName")
         .sort({ createdAt: -1 });
@@ -74,6 +119,9 @@ export const processDonation = asyncHandler(async (req, res) => {
     }
     if (campaign.status !== "Active") {
         throw new ApiError(400, `This campaign is no longer accepting donations (${campaign.status}).`);
+    }
+    if (campaign.removedByAdmin) {
+        throw new ApiError(400, "This campaign is no longer available.");
     }
 
     let order;
@@ -163,6 +211,9 @@ export const verifyDonation = asyncHandler(async (req, res) => {
     if (campaign.status !== "Active") {
         throw new ApiError(400, `This campaign is no longer accepting donations (${campaign.status}).`);
     }
+    if (campaign.removedByAdmin) {
+        throw new ApiError(400, "This campaign is no longer available.");
+    }
 
     const donationAmount = order.amount_paid / 100; // paise -> INR
 
@@ -205,6 +256,10 @@ export const verifyDonation = asyncHandler(async (req, res) => {
     if (donationsByUser === 1) {
         await User.findByIdAndUpdate(req.user._id, { $inc: { "impact.campaignsFunded": 1 } });
     }
+
+    // Notifications only here, after a first-time recording: the
+    // already-recorded branch above returns before this point.
+    await notifyDonationRecorded(updated, req.user._id, donationAmount);
 
     // 6. Don't send the donor list back (it holds other people's ids and payment ids)
     const result = updated.toObject();
@@ -316,6 +371,8 @@ export const razorpayWebhook = asyncHandler(async (req, res) => {
         if (donationsByUser === 1) {
             await User.findByIdAndUpdate(userId, { $inc: { "impact.campaignsFunded": 1 } });
         }
+
+        await notifyDonationRecorded(updated, userId, amount);
     }
 
     return res.status(200).send("Webhook received successfully.");
@@ -339,6 +396,9 @@ export const deleteCampaign = asyncHandler(async (req, res) => {
         throw new ApiError(403, "You can only delete your own campaigns.");
     }
 
+    if (campaign.removedByAdmin) {
+        throw new ApiError(400, "This campaign was removed by an admin. Ask an admin to restore it before deleting it.");
+    }
     if (campaign.raisedAmount > 0) {
         throw new ApiError(
             400, 
@@ -391,8 +451,17 @@ export const uploadCampaignImpact = asyncHandler(async (req, res) => {
         message,
         uploadedAt: Date.now()
     };
-    
+
     await campaign.save();
+
+    // Campaign impact update -> notify every donor of this campaign.
+    await notifyUsers(campaign.donors.map((d) => String(d.user)), {
+        type: "CampaignImpact",
+        title: "Campaign update",
+        message: `"${campaign.title}" has a new impact update: ${message || "See the campaign for the latest photos and news."}`,
+        relatedType: "DonationCampaign",
+        relatedId: campaign._id,
+    });
 
     return res.status(200).json(
         new ApiResponse(200, campaign, "Financial impact proof uploaded successfully!")
@@ -407,6 +476,14 @@ export const getCampaignById = asyncHandler(async (req, res) => {
         .populate("ngo", "organizationName");
     if (!campaign) {
         throw new ApiError(404, "Campaign not found.");
+    }
+    // Soft-removed campaigns are hidden from normal access; only the
+    // owning NGO and admins can still view them.
+    if (campaign.removedByAdmin && req.user.role !== "admin") {
+        const ngoProfile = req.user.role === "ngo" ? await Ngo.findOne({ user: req.user._id }) : null;
+        if (!ngoProfile || String(campaign.ngo._id || campaign.ngo) !== String(ngoProfile._id)) {
+            throw new ApiError(404, "Campaign not found.");
+        }
     }
     return res.status(200).json(new ApiResponse(200, campaign, "Campaign fetched."));
 });

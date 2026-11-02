@@ -8,6 +8,7 @@ import { VolunteerApplication } from "../Models/volunteerapplicationmodel.js";
 import { VolunteerStory } from "../Models/volunteerstorymodel.js";
 import { User } from "../Models/usermodel.js";
 import { uploadOnCloudinary } from "../Utils/cloudinary.js";
+import { notifyUser, notifyUsers } from "../Utils/notifications.js";
 
 export const requestEmergencyVolunteers = asyncHandler(async(req,res)=>{
     const {id} = req.params
@@ -77,7 +78,7 @@ export const deleteVolunteerRequest = asyncHandler(async (req, res) => {
 export const getOpenVolunteerRequests = asyncHandler(async (req, res) => {
     // Board filter: ?linked=general (no emergency) or ?linked=emergency.
     // Without the filter the board shows both, as before.
-    const filter = { status: "Open" };
+    const filter = { status: "Open", removedByAdmin: { $ne: true } };
     if (req.query.linked === "general") filter.linkedEmergency = null;
     else if (req.query.linked === "emergency") filter.linkedEmergency = { $ne: null };
     const requests = await VolunteerRequest.find(filter)
@@ -95,6 +96,12 @@ export const getVolunteerRequestById = asyncHandler(async (req, res) => {
         .populate("linkedEmergency", "animalInfo status");
     if (!request) {
         throw new ApiError(404, "Volunteer request not found.");
+    }
+    if (request.removedByAdmin && req.user.role !== "admin") {
+        const ngoProfile = req.user.role === "ngo" ? await Ngo.findOne({ user: req.user._id }) : null;
+        if (!ngoProfile || String(request.ngo._id || request.ngo) !== String(ngoProfile._id)) {
+            throw new ApiError(404, "Volunteer request not found.");
+        }
     }
     return res.status(200).json(new ApiResponse(200, request, "Volunteer request fetched."));
 });
@@ -155,8 +162,26 @@ export const closeVolunteerRequest = asyncHandler(async (req, res) => {
     if (String(opportunity.ngo) !== String(ngoProfile._id)) {
         throw new ApiError(403, "You can only close your own volunteer requests.");
     }
+    const wasOpen = opportunity.status === "Open";
     opportunity.status = "Closed";
     await opportunity.save();
+
+    // Opportunity closed -> notify applicants who were still waiting or
+    // approved. (Re-closing an already-closed opportunity does not
+    // re-notify, because the transition above is what this checks.)
+    if (wasOpen) {
+        const applicants = await VolunteerApplication.find({
+            opportunity: opportunity._id,
+            status: { $in: ["Pending", "Approved"] },
+        });
+        await notifyUsers(applicants.map((a) => String(a.applicant)), {
+            type: "VolunteerOpportunityClosed",
+            title: "Volunteer opportunity closed",
+            message: `The volunteer opportunity "${opportunity.title}" has been closed by the NGO.`,
+            relatedType: "VolunteerRequest",
+            relatedId: opportunity._id,
+        });
+    }
     return res.status(200).json(new ApiResponse(200, opportunity, "Volunteer opportunity closed."));
 });
 
@@ -168,7 +193,7 @@ export const applyToVolunteerRequest = asyncHandler(async (req, res) => {
     if (!opportunity) {
         throw new ApiError(404, "Volunteer request not found.");
     }
-    if (opportunity.status !== "Open") {
+    if (opportunity.status !== "Open" || opportunity.removedByAdmin) {
         throw new ApiError(400, "This volunteer opportunity is no longer open.");
     }
     const ngoProfile = await Ngo.findOne({ user: req.user._id });
@@ -248,6 +273,15 @@ export const updateApplicationStatus = asyncHandler(async (req, res) => {
         throw new ApiError(400, `Cannot move an application from ${application.status} to ${status}.`);
     }
     await application.save();
+
+    await notifyUser(application.applicant, {
+        type: "VolunteerApplication",
+        title: `Volunteer application ${status.toLowerCase()}`,
+        message: `Your application for the volunteer opportunity was ${status.toLowerCase()}.`,
+        relatedType: "VolunteerRequest",
+        relatedId: application.opportunity,
+    });
+
     return res.status(200).json(new ApiResponse(200, application, `Application ${status.toLowerCase()}.`));
 });
 
@@ -302,7 +336,7 @@ export const createVolunteerStory = asyncHandler(async (req, res) => {
 // @desc    List Our Heroes stories, newest first
 // @route   GET /api/v1/volunteer/heroes
 export const getVolunteerStories = asyncHandler(async (req, res) => {
-    const stories = await VolunteerStory.find()
+    const stories = await VolunteerStory.find({ removedByAdmin: { $ne: true } })
         .populate("volunteer", "name")
         .populate("ngo", "organizationName")
         .populate("opportunity", "title")

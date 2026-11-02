@@ -4,6 +4,8 @@ import { asyncHandler } from "../Utils/asynchandler.js";
 import { uploadOnCloudinary } from "../Utils/cloudinary.js";
 import {Ngo} from "../Models/ngomodel.js";
 import { SupplyRequest } from "../Models/supplyrequestmodel.js";
+import { notifyUser, notifyUsers } from "../Utils/notifications.js";
+import { User } from "../Models/usermodel.js";
 
 // 1. NGO Creates Request
 export const createSupplyRequest = asyncHandler(async (req, res) => {
@@ -28,7 +30,7 @@ export const pledgeSupply = asyncHandler(async (req, res) => {
     const { pledgedQuantity, message } = req.body;
 
     const supplyRequest = await SupplyRequest.findById(id);
-    if (!supplyRequest || supplyRequest.status === "Fulfilled") {
+    if (!supplyRequest || supplyRequest.status === "Fulfilled" || supplyRequest.removedByAdmin) {
         throw new ApiError(404, "Request not found or already fulfilled.");
     }
     if (!Number.isFinite(Number(pledgedQuantity)) || Number(pledgedQuantity) <= 0) {
@@ -70,6 +72,18 @@ export const cancelPledge = asyncHandler(async (req, res) => {
     pledge.status = "Cancelled";
     await supplyRequest.save();
 
+    // The pledger cancelled, so the NGO is the one that needs to know.
+    const ngoProfile = await Ngo.findById(supplyRequest.ngo);
+    if (ngoProfile) {
+        await notifyUser(ngoProfile.user, {
+            type: "SupplyPledgeStatus",
+            title: "Pledge cancelled",
+            message: `${req.user.name || "A donor"} cancelled a pledge of ${pledge.pledgedQuantity} ${supplyRequest.unit} for "${supplyRequest.title}".`,
+            relatedType: "SupplyRequest",
+            relatedId: supplyRequest._id,
+        });
+    }
+
     return res.status(200).json(new ApiResponse(200, null, "Pledge cancelled."));
 });
 
@@ -102,6 +116,9 @@ export const updatePledgeStatus = asyncHandler(async (req, res) => {
         throw new ApiError(400, "A received pledge cannot be changed, otherwise receivedQuantity would be wrong.");
     }
 
+    const previousPledgeStatus = pledge.status;
+    const wasFulfilled = supplyRequest.status === "Fulfilled";
+
     // If marking as received for the first time, this is the ONLY place
     // receivedQuantity changes. All pledges are kept, even after the
     // request becomes Fulfilled, so the history is not deleted.
@@ -117,6 +134,35 @@ export const updatePledgeStatus = asyncHandler(async (req, res) => {
     pledge.status = status;
 
     await supplyRequest.save();
+
+    // Notifications and the suppliesDonated counter only fire on a real
+    // change: re-marking an already-Received pledge as Received changes
+    // nothing above, and must not re-notify or re-count it.
+    if (previousPledgeStatus !== status) {
+        await notifyUser(pledge.user, {
+            type: "SupplyPledgeStatus",
+            title: `Pledge ${status}`,
+            message: `Your pledge of ${pledge.pledgedQuantity} ${supplyRequest.unit} for "${supplyRequest.title}" is now ${status}.`,
+            relatedType: "SupplyRequest",
+            relatedId: supplyRequest._id,
+        });
+        if (status === "Received") {
+            // Impact counter (Batch 5.4): once per pledge, exactly here,
+            // where a pledge first becomes Received. Best-effort only.
+            try {
+                await User.findByIdAndUpdate(pledge.user, { $inc: { "impact.suppliesDonated": 1 } });
+            } catch (err) { /* counter is secondary to the pledge update */ }
+        }
+        if (!wasFulfilled && supplyRequest.status === "Fulfilled") {
+            await notifyUsers(supplyRequest.pledges.map((p) => String(p.user)), {
+                type: "SupplyFulfilled",
+                title: "Supply request fulfilled",
+                message: `The supply request "${supplyRequest.title}" has been fulfilled. Thank you for your support!`,
+                relatedType: "SupplyRequest",
+                relatedId: supplyRequest._id,
+            });
+        }
+    }
 
     return res.status(200).json(
         new ApiResponse(200, supplyRequest, `Pledge marked as ${status}.`)
@@ -162,7 +208,7 @@ export const uploadImpact = asyncHandler(async (req, res) => {
 // @desc    List open supply requests users can pledge to
 // @route   GET /api/v1/supplies
 export const getOpenSupplyRequests = asyncHandler(async (req, res) => {
-    const requests = await SupplyRequest.find({ status: "Open" })
+    const requests = await SupplyRequest.find({ status: "Open", removedByAdmin: { $ne: true } })
         .populate("ngo", "organizationName")
         .sort({ createdAt: -1 });
     return res.status(200).json(new ApiResponse(200, requests, "Open supply requests fetched."));
@@ -189,6 +235,12 @@ export const getSupplyRequestById = asyncHandler(async (req, res) => {
         .populate("pledges.user", "name");
     if (!supplyRequest) {
         throw new ApiError(404, "Supply request not found.");
+    }
+    if (supplyRequest.removedByAdmin && req.user.role !== "admin") {
+        const ngoProfile = req.user.role === "ngo" ? await Ngo.findOne({ user: req.user._id }) : null;
+        if (!ngoProfile || String(supplyRequest.ngo._id || supplyRequest.ngo) !== String(ngoProfile._id)) {
+            throw new ApiError(404, "Supply request not found.");
+        }
     }
     return res.status(200).json(new ApiResponse(200, supplyRequest, "Supply request fetched."));
 });

@@ -8,6 +8,7 @@ import { ApiError } from "../Utils/ApiError.js";
 import { ApiResponse } from "../Utils/ApiResponse.js";
 import { asyncHandler } from "../Utils/asynchandler.js";
 import validator from "validator";
+import { assertNotSuspended } from "../Utils/accountStatus.js";
 
 export const registerUser= asyncHandler(async(req,res) => {
  const { name, email, password, phone, role } = req.body;
@@ -94,6 +95,10 @@ if(!user){
         throw new ApiError(401,"Invalid Credentials");
 
  }
+
+ // Suspended users cannot log in, and no new tokens are issued to them.
+ // (An expired temporary suspension is lifted by this same check.)
+ await assertNotSuspended(user);
  
 // Generate both tokens
     const accessToken = generateAccessToken(user._id);
@@ -193,6 +198,9 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
         res.clearCookie("jwt_refresh", options);
         throw new ApiError(401, "Refresh token has been revoked. Please log in again.");
     }
+
+    // A suspended account cannot refresh its way back in.
+    await assertNotSuspended(user);
 
     const newAccessToken = generateAccessToken(user._id);
     const newRefreshToken = generateRefreshToken(user._id);

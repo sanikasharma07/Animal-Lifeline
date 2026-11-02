@@ -61,14 +61,19 @@ export const getNearbyHelp = asyncHandler(async (req, res) => {
 
     // $geoNear must be the first aggregation stage and needs the
     // 2dsphere index both models already have. It also sorts by distance.
-    const ngoDocs = await Ngo.aggregate([
-        { $geoNear: { near: { type: "Point", coordinates: [parsedLng, parsedLat] }, distanceField: "distanceMeters", maxDistance, spherical: true, query: { verificationStatus: "verified" } } },
-        { $lookup: { from: "users", localField: "user", foreignField: "_id", as: "contact" } },
-    ]);
-    const vetDocs = await Vet.aggregate([
-        { $geoNear: { near: { type: "Point", coordinates: [parsedLng, parsedLat] }, distanceField: "distanceMeters", maxDistance, spherical: true, query: { verificationStatus: "verified" } } },
-        { $lookup: { from: "users", localField: "user", foreignField: "_id", as: "contact" } },
-    ]);
+    // Batch 5 fix: $geoNear fails with a 500 when the collection does
+    // not exist yet (a fresh database with no vets, for example), even
+    // though the correct answer is simply "no vets nearby". A missing
+    // collection is therefore treated as an empty result, not an error.
+    const geoNear = async (Model, query) => {
+        if ((await Model.countDocuments()) === 0) return [];
+        return await Model.aggregate([
+            { $geoNear: { near: { type: "Point", coordinates: [parsedLng, parsedLat] }, distanceField: "distanceMeters", maxDistance, spherical: true, query } },
+            { $lookup: { from: "users", localField: "user", foreignField: "_id", as: "contact" } },
+        ]);
+    };
+    const ngoDocs = await geoNear(Ngo, { verificationStatus: "verified" });
+    const vetDocs = await geoNear(Vet, { verificationStatus: "verified" });
 
     const ngos = ngoDocs.map(shapeNgo);
     const vets = vetDocs.map(shapeVet);

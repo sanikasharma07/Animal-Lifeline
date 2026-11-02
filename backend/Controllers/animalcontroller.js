@@ -5,6 +5,7 @@ import { uploadOnCloudinary } from "../Utils/cloudinary.js";
 import {Ngo} from "../Models/ngomodel.js"
 import { AdoptionApplication } from "../Models/adoptionmodel.js";
 import {Animal} from "../Models/animalmodel.js"
+import { notifyUser, notifyUsers } from "../Utils/notifications.js";
 
 
 // @desc    Add a new animal for Foster/Adoption (NGO Only)
@@ -55,7 +56,8 @@ export const addAnimal = asyncHandler(async (req, res) => {
 export const getAvailableAnimals = asyncHandler(async (req, res) => {
     // Fetch animals with either status
     const animals = await Animal.find({
-        status: { $in: ["Available for Foster", "Available for Adoption"] }
+        status: { $in: ["Available for Foster", "Available for Adoption"] },
+        removedByAdmin: { $ne: true },
     }).populate("ngo", "organizationName user");
 
     return res.status(200).json(new ApiResponse(200, animals, "Available animals fetched."));
@@ -75,7 +77,7 @@ export const applyForAdoption = asyncHandler(async (req, res) => {
     }
 
     const animal = await Animal.findById(id);
-    if (!animal) {
+    if (!animal || animal.removedByAdmin) {
         throw new ApiError(404, "Animal not found.");
     }
 
@@ -140,6 +142,17 @@ export const updateApplicationStatus = asyncHandler(async (req, res) => {
     application.applicationStatus = status;
     await application.save();
 
+    // The applicant is notified of their own outcome, whether Approved
+    // or Rejected. (An approval below also auto-rejects the other
+    // pending applicants, and they are notified separately.)
+    await notifyUser(application.applicant, {
+        type: "AdoptionApplication",
+        title: `Application ${status.toLowerCase()}`,
+        message: `Your ${application.applicationType.toLowerCase()} application was ${status.toLowerCase()} by the NGO.`,
+        relatedType: "Animal",
+        relatedId: application.animal,
+    });
+
     // 2. If Approved, update the Animal and reject other applicants!
     if (status === "Approved") {
         const animal = await Animal.findById(application.animal);
@@ -150,14 +163,26 @@ export const updateApplicationStatus = asyncHandler(async (req, res) => {
         }
 
         // Auto-reject any other pending applications for this specific animal
+        const otherPending = await AdoptionApplication.find({
+            animal: animal._id,
+            _id: { $ne: application._id },
+            applicationStatus: "Pending",
+        });
         await AdoptionApplication.updateMany(
-            { 
-                animal: animal._id, 
+            {
+                animal: animal._id,
                 _id: { $ne: application._id }, // Exclude the one we just approved
-                applicationStatus: "Pending" 
+                applicationStatus: "Pending"
             },
             { $set: { applicationStatus: "Rejected" } }
         );
+        await notifyUsers(otherPending.map((a) => String(a.applicant)), {
+            type: "AdoptionApplication",
+            title: "Application rejected",
+            message: "Your application for this animal was rejected because another applicant was approved.",
+            relatedType: "Animal",
+            relatedId: application.animal,
+        });
     }
 
     return res.status(200).json(
@@ -200,6 +225,12 @@ export const getAnimalById = asyncHandler(async (req, res) => {
         .populate("linkedEmergency", "animalInfo status");
     if (!animal) {
         throw new ApiError(404, "Animal not found.");
+    }
+    if (animal.removedByAdmin && req.user.role !== "admin") {
+        const ngoProfile = req.user.role === "ngo" ? await Ngo.findOne({ user: req.user._id }) : null;
+        if (!ngoProfile || String(animal.ngo._id || animal.ngo) !== String(ngoProfile._id)) {
+            throw new ApiError(404, "Animal not found.");
+        }
     }
     return res.status(200).json(new ApiResponse(200, animal, "Animal fetched."));
 });

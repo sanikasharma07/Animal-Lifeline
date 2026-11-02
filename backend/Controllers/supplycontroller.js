@@ -31,6 +31,9 @@ export const pledgeSupply = asyncHandler(async (req, res) => {
     if (!supplyRequest || supplyRequest.status === "Fulfilled") {
         throw new ApiError(404, "Request not found or already fulfilled.");
     }
+    if (!Number.isFinite(Number(pledgedQuantity)) || Number(pledgedQuantity) <= 0) {
+        throw new ApiError(400, "Pledged quantity must be a positive number.");
+    }
 
     supplyRequest.pledges.push({
         user: req.user._id,
@@ -49,7 +52,13 @@ export const cancelPledge = asyncHandler(async (req, res) => {
     const { requestId, pledgeId } = req.params;
 
     const supplyRequest = await SupplyRequest.findById(requestId);
+    if (!supplyRequest) {
+        throw new ApiError(404, "Supply request not found.");
+    }
     const pledge = supplyRequest.pledges.id(pledgeId);
+    if (!pledge) {
+        throw new ApiError(404, "Pledge not found.");
+    }
 
     if (String(pledge.user) !== String(req.user._id)) {
         throw new ApiError(403, "You can only cancel your own pledges.");
@@ -70,36 +79,43 @@ export const updatePledgeStatus = asyncHandler(async (req, res) => {
     const { status } = req.body; // e.g., "Received"
 
     const ngoProfile = await Ngo.findOne({ user: req.user._id });
+    if (!ngoProfile) {
+        throw new ApiError(403, "NGO Profile not found.");
+    }
     const supplyRequest = await SupplyRequest.findById(requestId);
+    if (!supplyRequest) {
+        throw new ApiError(404, "Supply request not found.");
+    }
 
     if (String(supplyRequest.ngo) !== String(ngoProfile._id)) {
         throw new ApiError(403, "Unauthorized.");
     }
 
     const pledge = supplyRequest.pledges.id(pledgeId);
-    
-    // If marking as received for the first time:
+    if (!pledge) {
+        throw new ApiError(404, "Pledge not found.");
+    }
+    if (!["Pledged", "Contacted", "Delivery Arranged", "Received", "Cancelled"].includes(status)) {
+        throw new ApiError(400, "Invalid pledge status.");
+    }
+    if (pledge.status === "Received" && status !== "Received") {
+        throw new ApiError(400, "A received pledge cannot be changed, otherwise receivedQuantity would be wrong.");
+    }
+
+    // If marking as received for the first time, this is the ONLY place
+    // receivedQuantity changes. All pledges are kept, even after the
+    // request becomes Fulfilled, so the history is not deleted.
     if (status === "Received" && pledge.status !== "Received") {
         supplyRequest.receivedQuantity += pledge.pledgedQuantity;
-        
+
         // Auto-complete if goal is reached
         if (supplyRequest.receivedQuantity >= supplyRequest.requiredQuantity) {
             supplyRequest.status = "Fulfilled";
-            
-            // Keep ONLY the pledges that have been successfully "Received".
-            // Ghost pledges are permanently deleted from this request.
-            supplyRequest.pledges = supplyRequest.pledges.filter(
-                (p) => p.status === "Received" || (p._id.equals(pledgeId))
-            );
         }
     }
 
-    // Update the current pledge status (if it wasn't deleted by the sweep)
-    const updatedPledge = supplyRequest.pledges.id(pledgeId);
-    if (updatedPledge) {
-        updatedPledge.status = status;
-    }
-    
+    pledge.status = status;
+
     await supplyRequest.save();
 
     return res.status(200).json(
@@ -113,6 +129,13 @@ export const uploadImpact = asyncHandler(async (req, res) => {
     const { message } = req.body;
 
     const supplyRequest = await SupplyRequest.findById(id);
+    if (!supplyRequest) {
+        throw new ApiError(404, "Supply request not found.");
+    }
+    const ngoProfile = await Ngo.findOne({ user: req.user._id });
+    if (!ngoProfile || String(supplyRequest.ngo) !== String(ngoProfile._id)) {
+        throw new ApiError(403, "You can only upload impact proof for your own supply requests.");
+    }
     if (supplyRequest.status !== "Fulfilled") {
         throw new ApiError(400, "You can only upload impact proof for fulfilled requests.");
     }

@@ -31,8 +31,11 @@ const ngoSchema=  new mongoose.Schema({
             pinCode: String,
         },
         // Add this inside your NGO schema (maybe right below address)
+// No default for location.type: an NGO without coordinates must have NO
+// location at all, not a Point with no coordinates, because MongoDB's
+// 2dsphere index rejects a Point with no coordinates on insert.
 location: {
-    type: { type: String, enum: ["Point"], default: "Point" },
+    type: { type: String, enum: ["Point"] },
     coordinates: { type: [Number] }, // [longitude, latitude]
 },
         // 4. Operational Information

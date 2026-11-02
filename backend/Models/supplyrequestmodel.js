@@ -49,4 +49,4 @@ const supplyRequestSchema = new mongoose.Schema({
      
 } , { timestamps: true });
 
-const SupplyRequest = mongoose.model("SupplyRequest", supplyRequestSchema);
+export const SupplyRequest = mongoose.model("SupplyRequest", supplyRequestSchema);

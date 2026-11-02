@@ -1,5 +1,5 @@
 import {Router} from 'express';
-import { createCampaign , getActiveCampaigns , processDonation , deleteCampaign ,uploadCampaignImpact , verifyDonation } from '../Controllers/donationcontroller.js'
+import { createCampaign , getActiveCampaigns , processDonation , deleteCampaign ,uploadCampaignImpact , verifyDonation  , razorpayWebhook} from '../Controllers/donationcontroller.js'
 import { verifyJWT , isNgo } from '../middlewares/authmiddleware.js';
 import { upload } from '../middlewares/multermiddleware.js';
 
@@ -19,5 +19,6 @@ donationrouter.route("/campaigns/:id/impact").post(
 donationrouter.route("/campaigns").get(verifyJWT, getActiveCampaigns);
 donationrouter.route("/campaigns/:id/donate").post(verifyJWT, processDonation);
 donationrouter.route("/campaigns/:id/verify").post(verifyJWT, verifyDonation);
+donationrouter.route("/campaigns/:id/webhook").post(razorpayWebhook);
 
 export default donationrouter;

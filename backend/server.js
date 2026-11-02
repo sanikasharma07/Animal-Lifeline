@@ -13,6 +13,7 @@ import emergencyRoutes from "./Routes/emergencyroutes.js";
 import volunteerRouter from "./Routes/volunteerroutes.js";
 import animalrouter from "./Routes/animalroutes.js";
 import donationrouter from "./Routes/donationroutes.js";
+import supplyrouter from "./Routes/supplyroutes.js";
 
 connectDB();
 
@@ -39,6 +40,7 @@ app.use("/api/v1/emergency", emergencyRoutes);
 app.use("/api/v1/volunteer", volunteerRouter);
 app.use("/api/v1/animals", animalrouter);
 app.use("/api/v1/donations", donationrouter);
+app.use("/api/v1/supplies", supplyrouter);
 app.get('/',(req,res)=>{
     res.send('App is running')
 })

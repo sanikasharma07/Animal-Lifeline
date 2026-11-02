@@ -21,7 +21,15 @@ const app= express();
 
 // middlewares
 app.use(cookieParser());
-app.use(express.json({ limit: "16kb" }));
+app.use(
+    express.json({
+        limit: "16kb",
+        // Keep the exact bytes of the request; Razorpay's webhook signature is calculated on them
+        verify: (req, res, buf) => {
+            req.rawBody = buf;
+        },
+    })
+);
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(
     cors({

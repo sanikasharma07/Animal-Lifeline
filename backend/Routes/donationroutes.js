@@ -19,6 +19,6 @@ donationrouter.route("/campaigns/:id/impact").post(
 donationrouter.route("/campaigns").get(verifyJWT, getActiveCampaigns);
 donationrouter.route("/campaigns/:id/donate").post(verifyJWT, processDonation);
 donationrouter.route("/campaigns/:id/verify").post(verifyJWT, verifyDonation);
-donationrouter.route("/campaigns/:id/webhook").post(razorpayWebhook);
+donationrouter.route("/webhook").post(razorpayWebhook);
 
 export default donationrouter;

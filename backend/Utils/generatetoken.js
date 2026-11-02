@@ -8,7 +8,11 @@ export const generateAccessToken = (id) => {
 };
 
 export const generateRefreshToken = (id) => {
-    return jwt.sign({ id }, process.env.REFRESH_TOKEN_SECRET, {
+    // jti (a random id per token) is essential for rotation: JWT timestamps
+    // are only second-precision, so two refresh tokens made in the same
+    // second would otherwise be identical strings and rotation would
+    // silently do nothing. With a random jti, every refresh token is unique.
+    return jwt.sign({ id, jti: crypto.randomUUID() }, process.env.REFRESH_TOKEN_SECRET, {
         expiresIn: "30d",
     });
 };

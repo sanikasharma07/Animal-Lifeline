@@ -1,7 +1,8 @@
-import { asyncHandler } from "../utils/asyncHandler.js";
-import { ApiError } from "../utils/ApiError.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
+import { asyncHandler } from "../Utils/asynchandler.js";
+import { ApiError } from "../Utils/ApiError.js";
+import { ApiResponse } from "../Utils/ApiResponse.js";
 import { Ngo } from "../Models/ngomodel.js";
+import { User } from "../Models/usermodel.js";
 import {uploadOnCloudinary} from "../Utils/cloudinary.js"
 
 export const createorupdateNgoProfile = asyncHandler(async(req,res)=>{
@@ -164,4 +165,15 @@ export const getNearbyNgos = asyncHandler(async (req, res) => {
     return res.status(200).json(
         new ApiResponse(200, nearbyNgos, `Found ${nearbyNgos.length} NGOs nearby.`)
     );
+});
+
+// @desc    Get the logged-in user's own NGO profile (including documents,
+// which are only hidden from other users' verified/nearby lists)
+// @route   GET /api/v1/ngo/profile
+export const getMyNgoProfile = asyncHandler(async (req, res) => {
+    const profile = await Ngo.findOne({ user: req.user._id });
+    if (!profile) {
+        throw new ApiError(404, "NGO Profile not found.");
+    }
+    return res.status(200).json(new ApiResponse(200, profile, "Your NGO profile fetched."));
 });

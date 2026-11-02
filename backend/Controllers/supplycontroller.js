@@ -1,6 +1,6 @@
-import { ApiError } from "../utils/ApiError.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../Utils/ApiError.js";
+import { ApiResponse } from "../Utils/ApiResponse.js";
+import { asyncHandler } from "../Utils/asynchandler.js";
 import { uploadOnCloudinary } from "../Utils/cloudinary.js";
 import {Ngo} from "../Models/ngomodel.js";
 import { SupplyRequest } from "../Models/supplyrequestmodel.js";
@@ -157,4 +157,38 @@ export const uploadImpact = asyncHandler(async (req, res) => {
     await supplyRequest.save();
 
     return res.status(200).json(new ApiResponse(200, supplyRequest, "Impact proof uploaded successfully!"));
+});
+
+// @desc    List open supply requests users can pledge to
+// @route   GET /api/v1/supplies
+export const getOpenSupplyRequests = asyncHandler(async (req, res) => {
+    const requests = await SupplyRequest.find({ status: "Open" })
+        .populate("ngo", "organizationName")
+        .sort({ createdAt: -1 });
+    return res.status(200).json(new ApiResponse(200, requests, "Open supply requests fetched."));
+});
+
+// @desc    List the logged-in NGO's own supply requests
+// @route   GET /api/v1/supplies/mine
+export const getMySupplyRequests = asyncHandler(async (req, res) => {
+    const ngoProfile = await Ngo.findOne({ user: req.user._id });
+    if (!ngoProfile) {
+        throw new ApiError(403, "NGO Profile not found.");
+    }
+    const requests = await SupplyRequest.find({ ngo: ngoProfile._id })
+        .populate("pledges.user", "name")
+        .sort({ createdAt: -1 });
+    return res.status(200).json(new ApiResponse(200, requests, "Your supply requests fetched."));
+});
+
+// @desc    Get one supply request by id
+// @route   GET /api/v1/supplies/:id
+export const getSupplyRequestById = asyncHandler(async (req, res) => {
+    const supplyRequest = await SupplyRequest.findById(req.params.id)
+        .populate("ngo", "organizationName")
+        .populate("pledges.user", "name");
+    if (!supplyRequest) {
+        throw new ApiError(404, "Supply request not found.");
+    }
+    return res.status(200).json(new ApiResponse(200, supplyRequest, "Supply request fetched."));
 });

@@ -27,6 +27,15 @@ const userSchema= new mongoose.Schema({
             enum: ["user", "ngo", "admin"],
             default: "user",
         },
+   // SHA-256 hash of the current refresh token, or null when logged out.
+   // Only one refresh token is active per user at a time: logging in or
+   // refreshing on one device replaces the token from another device.
+   // select: false keeps the hash out of normal user queries.
+   refreshTokenHash: {
+            type: String,
+            default: null,
+            select: false,
+   },
 impact: {
     rescuesReported: { type: Number, default: 0 },
     suppliesDonated: { type: Number, default: 0 },

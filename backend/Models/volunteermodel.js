@@ -26,8 +26,12 @@ const volunteerRequestSchema = new mongoose.Schema(
             required: true,
             min: 1
         },
+        // No default for location.type: a general opportunity without
+        // coordinates must have NO location, not an empty Point, because
+        // MongoDB's 2dsphere index rejects a Point with no coordinates.
+        // Emergency-linked opportunities set location from the emergency.
         location: {
-            type: { type: String, enum: ["Point"], default: "Point" },
+            type: { type: String, enum: ["Point"] },
             coordinates: { type: [Number] }, // Inherited from Emergency
         },
         status: {

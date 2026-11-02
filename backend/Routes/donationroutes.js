@@ -1,6 +1,7 @@
 import {Router} from 'express';
-import { createCampaign , getActiveCampaigns , processDonation} from '../Controllers/donationcontroller.js'
+import { createCampaign , getActiveCampaigns , processDonation , deleteCampaign ,uploadCampaignImpact , verifyDonation } from '../Controllers/donationcontroller.js'
 import { verifyJWT , isNgo } from '../middlewares/authmiddleware.js';
+import { upload } from '../middlewares/multermiddleware.js';
 
 const donationrouter = Router();
 
@@ -17,4 +18,6 @@ donationrouter.route("/campaigns/:id/impact").post(
 // User/Public Routes
 donationrouter.route("/campaigns").get(verifyJWT, getActiveCampaigns);
 donationrouter.route("/campaigns/:id/donate").post(verifyJWT, processDonation);
+donationrouter.route("/campaigns/:id/verify").post(verifyJWT, verifyDonation);
 
+export default donationrouter;

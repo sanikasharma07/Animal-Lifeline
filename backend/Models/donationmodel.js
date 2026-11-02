@@ -31,7 +31,8 @@ const donationCampaignSchema = new mongoose.Schema(
                     ref: "User",
                 },
                 amount: { type: Number, required: true },
-                transactionId: { type: String }, // For Razorpay/Stripe tracking later
+                transactionId: { type: String }, // Razorpay payment id
+                orderId: { type: String }, // Razorpay order id, pushed by verifyDonation / razorpayWebhook
                 donatedAt: { type: Date, default: Date.now }
             }
         ],

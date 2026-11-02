@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createorupdateNgoProfile , getVerifiedNgos , getNearbyNgos} from "../Controllers/ngocontrollerl.js";
+import { createorupdateNgoProfile , getVerifiedNgos , getNearbyNgos, getMyNgoProfile} from "../Controllers/ngocontrollerl.js";
 import { isNgo, verifyJWT} from "../middlewares/authmiddleware.js"
 import { upload } from "../middlewares/multermiddleware.js";
   
@@ -18,6 +18,7 @@ Ngorouter.route("/profile").post(
     createorupdateNgoProfile
 );
 
+Ngorouter.route("/profile").get(getMyNgoProfile);
 Ngorouter.route("/verified").get(getVerifiedNgos);
 Ngorouter.route("/nearby").get(getNearbyNgos);
 

@@ -6,11 +6,21 @@ import { DonationCampaign } from "../Models/donationmodel.js";
 import { uploadOnCloudinary } from "../Utils/cloudinary.js";
 import Razorpay from "razorpay";
 
-// Initialize Razorpay Instance
-const razorpayInstance = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
-});
+// Created lazily (on first use) so the server still boots if the Razorpay keys
+// are missing. Only the payment endpoints need them.
+let razorpayInstance = null;
+const getRazorpay = () => {
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+        throw new ApiError(503, "Online payments are not configured on the server.");
+    }
+    if (!razorpayInstance) {
+        razorpayInstance = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET,
+        });
+    }
+    return razorpayInstance;
+};
 
 // @desc    Create a Fundraising Campaign (NGO Only)
 // @route   POST /api/v1/donations/campaigns
@@ -44,34 +54,47 @@ export const getActiveCampaigns = asyncHandler(async (req, res) => {
 
 // @desc    Initiate a donation (Creates Razorpay Order)
 // @route   POST /api/v1/donations/campaigns/:id/donate
+// @desc    Initiate a donation (Creates Razorpay Order)
+// @route   POST /api/v1/donations/campaigns/:id/donate
 export const processDonation = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { amount } = req.body; // Expecting amount in INR
+    const amount = Number(req.body.amount); // Expecting amount in INR
 
-    if (!amount || amount < 50) {
+    if (!Number.isFinite(amount) || amount < 50) {
         throw new ApiError(400, "Donation amount must be at least ₹50.");
     }
 
     const campaign = await DonationCampaign.findById(id);
-    if (!campaign || campaign.status === "Closed") {
-        throw new ApiError(404, "Campaign not found or closed.");
+    if (!campaign) {
+        throw new ApiError(404, "Campaign not found.");
+    }
+    if (campaign.status !== "Active") {
+        throw new ApiError(400, `This campaign is no longer accepting donations (${campaign.status}).`);
     }
 
-    // Create Razorpay Order options
-    const options = {
-        amount: Math.round(amount * 100), // Convert INR to paisa
-        currency: 'INR',
-        receipt: `receipt_campaign_${campaign._id}_${Date.now()}`
-    };
-
-    // Generate order via Razorpay
-    const order = await razorpayInstance.orders.create(options);
-    if (!order) {
-        throw new ApiError(500, "Failed to generate Razorpay order.");
+    let order;
+    try {
+        order = await getRazorpay().orders.create({
+            amount: Math.round(amount * 100), // Convert INR to paisa
+            currency: "INR",
+            receipt: `don_${Date.now()}_${String(campaign._id).slice(-8)}`, // max 40 chars
+            // Stored on the order so we can trust who/what this payment is for later
+            notes: {
+                campaignId: String(campaign._id),
+                userId: String(req.user._id),
+            },
+        });
+    } catch (err) {
+        if (err instanceof ApiError) throw err;
+        throw new ApiError(502, err?.error?.description || err?.message || "Failed to generate Razorpay order.");
     }
 
     return res.status(200).json(
-        new ApiResponse(200, { order, campaignId: campaign._id }, "Donation initiated successfully.")
+        new ApiResponse(
+            200,
+            { order, campaignId: campaign._id, keyId: process.env.RAZORPAY_KEY_ID },
+            "Donation initiated successfully."
+        )
     );
 });
 
@@ -86,7 +109,7 @@ export const verifyDonation = asyncHandler(async (req, res) => {
     }
 
     // Fetch actual payment status directly from Razorpay for security
-    const orderinfo = await razorpayInstance.orders.fetch(razorpay_order_id);
+    const orderinfo = await getRazorpay().orders.fetch(razorpay_order_id);
     
     if (orderinfo.status === 'paid') {
         const campaign = await DonationCampaign.findById(campaignId);

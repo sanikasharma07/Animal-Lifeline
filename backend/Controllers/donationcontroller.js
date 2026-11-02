@@ -149,6 +149,20 @@ export const verifyDonation = asyncHandler(async (req, res) => {
     if (order.notes?.campaignId !== String(id)) {
         throw new ApiError(400, "This payment was made for a different campaign.");
     }
+    if (order.amount_paid !== order.amount) {
+        throw new ApiError(400, "Payment amount does not match the order amount.");
+    }
+
+    // The campaign must still be accepting donations at verify time.
+    // (processDonation already checked this at order creation, but the
+    // campaign may have reached its goal or closed while payment was in flight.)
+    const campaign = await DonationCampaign.findById(id);
+    if (!campaign) {
+        throw new ApiError(404, "Campaign not found.");
+    }
+    if (campaign.status !== "Active") {
+        throw new ApiError(400, `This campaign is no longer accepting donations (${campaign.status}).`);
+    }
 
     const donationAmount = order.amount_paid / 100; // paise -> INR
 
@@ -250,6 +264,23 @@ export const razorpayWebhook = asyncHandler(async (req, res) => {
     const userId = order.notes?.userId;
     if (!campaignId || !userId) {
         return res.status(200).send("Payment not linked to a campaign.");
+    }
+    if (order.status !== "paid") {
+        return res.status(200).send("Payment not completed.");
+    }
+    if (payment.amount !== order.amount) {
+        return res.status(200).send("Payment amount does not match the order.");
+    }
+
+    // Do not record money against a campaign that is no longer Active.
+    // Return 200 (not an error) so Razorpay does not keep retrying a
+    // payment that can never be recorded for this campaign.
+    const campaign = await DonationCampaign.findById(campaignId);
+    if (!campaign) {
+        return res.status(200).send("Campaign not found.");
+    }
+    if (campaign.status !== "Active") {
+        return res.status(200).send("Campaign is no longer accepting donations.");
     }
 
     const razorpay_payment_id = payment.id;

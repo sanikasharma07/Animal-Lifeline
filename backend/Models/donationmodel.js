@@ -41,6 +41,14 @@ const donationCampaignSchema = new mongoose.Schema(
             enum: ["Active", "Goal Reached", "Closed"],
             default: "Active",
         },
+
+        // Soft removal by an admin (Batch 5). Removed content is excluded
+        // from public listings and normal access, but the document, its
+        // ownership and its history (donors, pledges, applications) are
+        // preserved, and an admin can restore it. Hard deletion is never
+        // used for moderation removal.
+        removedByAdmin: { type: Boolean, default: false },
+        removalReason: String,
         impact: {
             photos: [{ type: String }], // Cloudinary URLs (e.g., vet bills, recovered animal)
             message: { type: String }, // e.g., "Rocky's surgery was a success! Here is the vet bill."

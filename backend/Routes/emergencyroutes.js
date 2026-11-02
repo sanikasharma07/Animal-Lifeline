@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { reportEmergency , acceptEmergencyCase , requestAiCare , deleteEmergencyCase, updateEmergencyStatus, getMyEmergencies, getAssignedEmergencies, getOpenEmergencies, getEmergencyById} from "../Controllers/emergencycontroller.js";
+import { reportEmergency , acceptEmergencyCase , requestAiCare , deleteEmergencyCase, updateEmergencyStatus, getMyEmergencies, getAssignedEmergencies, getOpenEmergencies, getEmergencyById, postEmergencyUpdate, requestMoreInformation, markUnableToRespond} from "../Controllers/emergencycontroller.js";
 import { verifyJWT } from "../middlewares/authmiddleware.js"; 
 import { upload } from "../middlewares/multermiddleware.js"; // Your multer setup
 
@@ -18,6 +18,9 @@ emergencyrouter.route("/assigned").get(verifyJWT, getAssignedEmergencies);
 emergencyrouter.route("/open").get(verifyJWT, getOpenEmergencies);
 emergencyrouter.route("/:id").get(verifyJWT, getEmergencyById);
 emergencyrouter.route("/:id/status").patch(verifyJWT, updateEmergencyStatus);
+emergencyrouter.route("/:id/updates").post(verifyJWT, upload.array("photos", 3), postEmergencyUpdate);
+emergencyrouter.route("/:id/request-info").patch(verifyJWT, requestMoreInformation);
+emergencyrouter.route("/:id/unable-to-respond").patch(verifyJWT, markUnableToRespond);
 emergencyrouter.route("/:id/accept").patch(verifyJWT, acceptEmergencyCase);
 emergencyrouter.route("/:id/ai-care").patch(verifyJWT, requestAiCare);
 emergencyrouter.route("/:id").delete(verifyJWT, deleteEmergencyCase);

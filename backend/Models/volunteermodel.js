@@ -34,6 +34,14 @@ const volunteerRequestSchema = new mongoose.Schema(
             type: { type: String, enum: ["Point"] },
             coordinates: { type: [Number] }, // Inherited from Emergency
         },
+
+        // Soft removal by an admin (Batch 5). Removed content is excluded
+        // from public listings and normal access, but the document, its
+        // ownership and its history (donors, pledges, applications) are
+        // preserved, and an admin can restore it. Hard deletion is never
+        // used for moderation removal.
+        removedByAdmin: { type: Boolean, default: false },
+        removalReason: String,
         status: {
             type: String,
             enum: ["Open", "Closed"],

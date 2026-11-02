@@ -16,6 +16,8 @@ import donationrouter from "./Routes/donationroutes.js";
 import supplyrouter from "./Routes/supplyroutes.js";
 import vetRouter from "./Routes/vetroutes.js";
 import nearbyRouter from "./Routes/nearbyroutes.js";
+import notificationRouter from "./Routes/notificationroutes.js";
+import reportRouter from "./Routes/reportroutes.js";
 
 connectDB();
 
@@ -53,6 +55,8 @@ app.use("/api/v1/donations", donationrouter);
 app.use("/api/v1/supplies", supplyrouter);
 app.use("/api/v1/vets", vetRouter);
 app.use("/api/v1/nearby", nearbyRouter);
+app.use("/api/v1/notifications", notificationRouter);
+app.use("/api/v1/reports", reportRouter);
 app.get('/',(req,res)=>{
     res.send('App is running')
 })

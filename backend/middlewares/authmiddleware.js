@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken"
 import { User } from "../Models/usermodel.js"
 import { ApiError } from "../Utils/ApiError.js"
 import { asyncHandler } from "../Utils/asynchandler.js"
+import { assertNotSuspended } from "../Utils/accountStatus.js"
 
 export const verifyJWT = asyncHandler (async (req,res,next)=>{
 
@@ -18,10 +19,15 @@ export const verifyJWT = asyncHandler (async (req,res,next)=>{
      if(!user){
      throw new ApiError(401, "Invalid Access Token")
      }
- 
-     req.user= user;
+
+     // Suspended users cannot use any authenticated route. An expired
+     // temporary suspension is lifted here, so it needs no background job.
+     req.user = await assertNotSuspended(user);
      next();
    } catch (error) {
+       // ApiErrors (including the suspension 403 above) keep their own
+       // status; only token failures become 401.
+       if (error instanceof ApiError) throw error;
        throw new ApiError(401, error?.message || "Invalid Access Token")
    }
 

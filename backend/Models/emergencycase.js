@@ -48,6 +48,33 @@ const emergencyCaseSchema = new mongoose.Schema(
             default: false,
         },
 
+        // NGOs that marked themselves unable to respond to this case.
+        // Used to hide the case from their own open list; it does not
+        // assign or close the case.
+        declinedBy: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Ngo",
+        }],
+        // Progress updates posted by the assigned NGO after acceptance
+        // (Batch 5). Updates are private: they are only visible through
+        // case detail to the reporter, the assigned NGO and admins,
+        // never through a public listing.
+        updates: [{
+            ngo: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Ngo",
+                required: true,
+            },
+            type: {
+                type: String,
+                required: true,
+                enum: ["Rescue", "Animal Picked Up", "Veterinary Facility", "Treatment", "General Update"],
+            },
+            message: { type: String, required: true, trim: true, maxLength: 2000 },
+            photos: [{ type: String }],
+            createdAt: { type: Date, default: Date.now },
+        }],
+
         // ==========================================
         // RESCUE TRACKING PIPELINE
         // ==========================================

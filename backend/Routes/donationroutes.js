@@ -1,5 +1,5 @@
 import {Router} from 'express';
-import { createCampaign , getActiveCampaigns , processDonation , deleteCampaign ,uploadCampaignImpact , verifyDonation  , razorpayWebhook} from '../Controllers/donationcontroller.js'
+import { createCampaign , getActiveCampaigns , getCampaignById , getMyCampaigns , processDonation , deleteCampaign ,uploadCampaignImpact , verifyDonation  , razorpayWebhook} from '../Controllers/donationcontroller.js'
 import { verifyJWT , isNgo } from '../middlewares/authmiddleware.js';
 import { upload } from '../middlewares/multermiddleware.js';
 
@@ -17,6 +17,10 @@ donationrouter.route("/campaigns/:id/impact").post(
 );
 // User/Public Routes
 donationrouter.route("/campaigns").get(verifyJWT, getActiveCampaigns);
+// "/campaigns/mine" must come before "/campaigns/:id", otherwise
+// "mine" would be treated as a campaign id.
+donationrouter.route("/campaigns/mine").get(verifyJWT, isNgo, getMyCampaigns);
+donationrouter.route("/campaigns/:id").get(verifyJWT, getCampaignById);
 donationrouter.route("/campaigns/:id/donate").post(verifyJWT, processDonation);
 donationrouter.route("/campaigns/:id/verify").post(verifyJWT, verifyDonation);
 donationrouter.route("/webhook").post(razorpayWebhook);

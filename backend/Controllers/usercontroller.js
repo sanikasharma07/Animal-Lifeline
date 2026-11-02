@@ -1,9 +1,12 @@
 import {User} from "../Models/usermodel.js"
+import { EmergencyCase } from "../Models/emergencycase.js";
+import { SupplyRequest } from "../Models/supplyrequestmodel.js";
+import { DonationCampaign } from "../Models/donationmodel.js";
 import { generateAccessToken,generateRefreshToken, hashRefreshToken } from "../Utils/generatetoken.js"
 import jwt from "jsonwebtoken";
-import { ApiError } from "../utils/ApiError.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../Utils/ApiError.js";
+import { ApiResponse } from "../Utils/ApiResponse.js";
+import { asyncHandler } from "../Utils/asynchandler.js";
 import validator from "validator";
 
 export const registerUser= asyncHandler(async(req,res) => {
@@ -209,7 +212,7 @@ export const getUserImpactProfile = asyncHandler(async (req, res) => {
     // 1. Fetch Emergencies Reported by User
     const emergencies = await EmergencyCase.find({ reporter: userId })
         .populate("assignedNgo", "organizationName")
-        .select("species status createdAt");
+        .select("animalInfo status createdAt");
 
     // 2. Fetch Fulfilled Supply Pledges
     const supplies = await SupplyRequest.find({
@@ -230,7 +233,7 @@ export const getUserImpactProfile = asyncHandler(async (req, res) => {
     emergencies.forEach(emp => {
         timeline.push({
             type: "Emergency",
-            title: `Reported an injured ${emp.species}`,
+            title: `Reported an injured ${emp.animalInfo?.species || "animal"}`,
             ngoName: emp.assignedNgo ? emp.assignedNgo.organizationName : "Pending NGO",
             status: emp.status,
             date: emp.createdAt
@@ -238,26 +241,30 @@ export const getUserImpactProfile = asyncHandler(async (req, res) => {
     });
 
     supplies.forEach(sup => {
-        // Find the specific pledge for this user
-        const userPledge = sup.pledges.find(p => String(p.user) === String(userId));
+        // Find this user's pledge that was actually Received for this request
+        const userPledge = sup.pledges.find(p => String(p.user) === String(userId) && p.status === "Received");
         if (userPledge) {
             timeline.push({
                 type: "Supply",
-                title: `Donated ${userPledge.quantity} units for: ${sup.title}`,
-                ngoName: sup.ngo.organizationName,
+                title: `Donated ${userPledge.pledgedQuantity} units for: ${sup.title}`,
+                ngoName: sup.ngo ? sup.ngo.organizationName : "Unknown NGO",
                 date: userPledge.pledgedAt
             });
         }
     });
 
     donations.forEach(camp => {
-        const userDonation = camp.donors.find(d => String(d.user) === String(userId));
-        if (userDonation) {
+        // A user may have donated to the same campaign more than once:
+        // show the total, dated at their most recent donation.
+        const userDonations = camp.donors.filter(d => String(d.user) === String(userId));
+        if (userDonations.length > 0) {
+            const totalAmount = userDonations.reduce((sum, d) => sum + d.amount, 0);
+            const latestDate = userDonations.reduce((latest, d) => (new Date(d.donatedAt) > new Date(latest) ? d.donatedAt : latest), userDonations[0].donatedAt);
             timeline.push({
                 type: "Donation",
-                title: `Funded ₹${userDonation.amount} towards: ${camp.title}`,
-                ngoName: camp.ngo.organizationName,
-                date: userDonation.donatedAt
+                title: `Funded ₹${totalAmount} towards: ${camp.title}`,
+                ngoName: camp.ngo ? camp.ngo.organizationName : "Unknown NGO",
+                date: latestDate
             });
         }
     });

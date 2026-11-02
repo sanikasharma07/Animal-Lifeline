@@ -1,6 +1,6 @@
-import { ApiError } from "../utils/ApiError.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../Utils/ApiError.js";
+import { ApiResponse } from "../Utils/ApiResponse.js";
+import { asyncHandler } from "../Utils/asynchandler.js";
 import { Ngo } from "../Models/ngomodel.js";
 import { DonationCampaign } from "../Models/donationmodel.js";
 import { uploadOnCloudinary } from "../Utils/cloudinary.js";
@@ -397,4 +397,29 @@ export const uploadCampaignImpact = asyncHandler(async (req, res) => {
     return res.status(200).json(
         new ApiResponse(200, campaign, "Financial impact proof uploaded successfully!")
     );
+});
+
+// @desc    Get one campaign by id (donors hidden, as in the list endpoint)
+// @route   GET /api/v1/donations/campaigns/:id
+export const getCampaignById = asyncHandler(async (req, res) => {
+    const campaign = await DonationCampaign.findById(req.params.id)
+        .select("-donors")
+        .populate("ngo", "organizationName");
+    if (!campaign) {
+        throw new ApiError(404, "Campaign not found.");
+    }
+    return res.status(200).json(new ApiResponse(200, campaign, "Campaign fetched."));
+});
+
+// @desc    Get the logged-in NGO's own campaigns, including their donors
+// @route   GET /api/v1/donations/campaigns/mine
+export const getMyCampaigns = asyncHandler(async (req, res) => {
+    const ngoProfile = await Ngo.findOne({ user: req.user._id });
+    if (!ngoProfile) {
+        throw new ApiError(403, "NGO Profile not found.");
+    }
+    const campaigns = await DonationCampaign.find({ ngo: ngoProfile._id })
+        .populate("donors.user", "name")
+        .sort({ createdAt: -1 });
+    return res.status(200).json(new ApiResponse(200, campaigns, "Your campaigns fetched."));
 });

@@ -6,19 +6,44 @@ import {uploadOnCloudinary} from "../Utils/cloudinary.js"
 
 export const createorupdateNgoProfile = asyncHandler(async(req,res)=>{
   const {
-    organizationName, 
-        registrationNumber, 
-        description, 
+    organizationName,
+        registrationNumber,
+        description,
         street , city , state, pinCode,
-        animalsHandled, 
+        animalsHandled,
         servicesProvided,
         registrationCertificate,
         panCard,
+        lng, lat, longitude, latitude,
 
   } = req.body;
 
   if(!organizationName || !registrationNumber || !description || !city || !state ){
     throw new ApiError(400,"Please provide all required text fields.")
+  }
+
+  // Coordinates are optional, so existing clients that do not send them
+  // keep working. When they ARE sent, both must be sent together and
+  // must be valid, otherwise the nearby search would get a bad point.
+  // Accept lng/lat (as used by the nearby endpoint) or longitude/latitude.
+  // Values arrive as strings from multipart forms, so parse them.
+  let location;
+  const rawLng = lng ?? longitude;
+  const rawLat = lat ?? latitude;
+  if (rawLng !== undefined || rawLat !== undefined) {
+    if (rawLng === undefined || rawLat === undefined) {
+      throw new ApiError(400, "Both longitude and latitude are required to save a location.");
+    }
+    const parsedLng = parseFloat(rawLng);
+    const parsedLat = parseFloat(rawLat);
+    if (!Number.isFinite(parsedLng) || !Number.isFinite(parsedLat)) {
+      throw new ApiError(400, "Longitude and latitude must be numbers.");
+    }
+    if (parsedLng < -180 || parsedLng > 180 || parsedLat < -90 || parsedLat > 90) {
+      throw new ApiError(400, "Longitude must be between -180 and 180 and latitude between -90 and 90.");
+    }
+    // MongoDB GeoJSON order is longitude first, then latitude.
+    location = { type: "Point", coordinates: [parsedLng, parsedLat] };
   }
 
   let profile = await Ngo.findOne({ user: req.user._id });
@@ -60,6 +85,10 @@ export const createorupdateNgoProfile = asyncHandler(async(req,res)=>{
         profile.animalsHandled = parsedAnimals;
         profile.servicesProvided = parsedServices;
         profile.documents = documents;
+        // Only overwrite the saved location when new coordinates were sent.
+        if (location) {
+            profile.location = location;
+        }
 
         // If they update their profile, we might want to reset verification status so Admin checks it again
         profile.verificationStatus = "pending"; 
@@ -83,7 +112,8 @@ export const createorupdateNgoProfile = asyncHandler(async(req,res)=>{
             address,
             animalsHandled: parsedAnimals,
             servicesProvided: parsedServices,
-            documents
+            documents,
+            ...(location ? { location } : {}),
         })
         await User.findByIdAndUpdate(req.user._id, { role: "ngo" });
         return res.status(201).json(new ApiResponse(201, profile, "NGO Profile created successfully. Pending Admin verification."));

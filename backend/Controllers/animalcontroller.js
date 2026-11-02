@@ -1,6 +1,6 @@
-import { ApiError } from "../utils/ApiError.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../Utils/ApiError.js";
+import { ApiResponse } from "../Utils/ApiResponse.js";
+import { asyncHandler } from "../Utils/asynchandler.js";
 import { uploadOnCloudinary } from "../Utils/cloudinary.js";
 import {Ngo} from "../Models/ngomodel.js"
 import { AdoptionApplication } from "../Models/adoptionmodel.js";
@@ -190,4 +190,16 @@ export const deleteAnimal = asyncHandler(async (req, res) => {
     return res.status(200).json(
         new ApiResponse(200, null, "Animal profile and related applications deleted successfully.")
     );
+});
+
+// @desc    Get one animal by id
+// @route   GET /api/v1/animals/:id
+export const getAnimalById = asyncHandler(async (req, res) => {
+    const animal = await Animal.findById(req.params.id)
+        .populate("ngo", "organizationName")
+        .populate("linkedEmergency", "animalInfo status");
+    if (!animal) {
+        throw new ApiError(404, "Animal not found.");
+    }
+    return res.status(200).json(new ApiResponse(200, animal, "Animal fetched."));
 });

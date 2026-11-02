@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getPendingNgos, verifyNgo } from "../Controllers/admincontroller.js";
+import { getPendingNgos, verifyNgo, getPendingVets, verifyVet } from "../Controllers/admincontroller.js";
 import { verifyJWT, isAdmin } from "../middlewares/authmiddleware.js";
 
 const router = Router();
@@ -9,5 +9,7 @@ router.use(verifyJWT, isAdmin);
 
 router.route("/ngo/pending").get(getPendingNgos);
 router.route("/ngo/:id/verify").patch(verifyNgo);
+router.route("/vet/pending").get(getPendingVets);
+router.route("/vet/:id/verify").patch(verifyVet);
 
 export default router;

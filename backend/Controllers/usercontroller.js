@@ -1,5 +1,6 @@
 import {User} from "../Models/usermodel.js"
-import { generateAccessToken,generateRefreshToken } from "../Utils/generatetoken.js"
+import { generateAccessToken,generateRefreshToken, hashRefreshToken } from "../Utils/generatetoken.js"
+import jwt from "jsonwebtoken";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -49,6 +50,8 @@ if (!createdUser) {
 // Generate both tokens
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
+    // Remember only the hash, so this token can be rotated and revoked.
+    await User.findByIdAndUpdate(user._id, { refreshTokenHash: hashRefreshToken(refreshToken) });
 
     // Set Refresh Token in HTTP-Only Cookie
     const options = {
@@ -92,6 +95,9 @@ if(!user){
 // Generate both tokens
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
+    // Remember only the hash, so this token can be rotated and revoked.
+    // Logging in here replaces any refresh token from another device.
+    await User.findByIdAndUpdate(user._id, { refreshTokenHash: hashRefreshToken(refreshToken) });
 
         // Set Refresh Token in HTTP-Only Cookie
     const options = {
@@ -118,6 +124,23 @@ export const logoutUser = asyncHandler (async (req,res) =>{
         sameSite: "strict",
     };
 
+    // Revoke the refresh token, if one was sent, so it cannot be used
+    // to get a new access token after logout - even if the access token
+    // has already expired (which is why logout no longer requires it).
+    // Logout always succeeds and clears the cookie, even with no token.
+    const refreshToken = req.cookies?.jwt_refresh;
+    if (refreshToken) {
+        try {
+            const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+            const user = await User.findById(decoded.id).select("+refreshTokenHash");
+            if (user && user.refreshTokenHash === hashRefreshToken(refreshToken)) {
+                await User.findByIdAndUpdate(user._id, { refreshTokenHash: null });
+            }
+        } catch (error) {
+            // An expired or invalid token cannot be used anyway; just clear it.
+        }
+    }
+
     res.status(200)
     .clearCookie("jwt_refresh" , options)
     .json(
@@ -125,6 +148,60 @@ export const logoutUser = asyncHandler (async (req,res) =>{
     )
 
     
+});
+// @desc    Get a new access token using the refresh-token cookie
+// @route   POST /api/v1/users/refresh
+// Rotation: every successful refresh issues a NEW refresh token and
+// stores only its hash. The old refresh token stops working immediately,
+// so a stolen old token cannot be replayed after a legitimate refresh.
+// Reuse detection: if a valid refresh token does not match the stored
+// hash, it may have been stolen and replayed, so all sessions are revoked.
+export const refreshAccessToken = asyncHandler(async (req, res) => {
+    const refreshToken = req.cookies?.jwt_refresh;
+    const options = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV !== "development",
+        sameSite: "strict",
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+    };
+
+    if (!refreshToken) {
+        throw new ApiError(401, "No refresh token provided.");
+    }
+
+    let decoded;
+    try {
+        decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+    } catch (error) {
+        res.clearCookie("jwt_refresh", options);
+        throw new ApiError(401, "Refresh token is invalid or expired. Please log in again.");
+    }
+
+    const user = await User.findById(decoded.id).select("+refreshTokenHash");
+    if (!user || !user.refreshTokenHash) {
+        res.clearCookie("jwt_refresh", options);
+        throw new ApiError(401, "Refresh token has been revoked. Please log in again.");
+    }
+
+    if (user.refreshTokenHash !== hashRefreshToken(refreshToken)) {
+        // This token was already rotated or revoked: treat it as possible
+        // theft and revoke the stored token too, forcing a fresh login.
+        await User.findByIdAndUpdate(user._id, { refreshTokenHash: null });
+        res.clearCookie("jwt_refresh", options);
+        throw new ApiError(401, "Refresh token has been revoked. Please log in again.");
+    }
+
+    const newAccessToken = generateAccessToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
+    await User.findByIdAndUpdate(user._id, { refreshTokenHash: hashRefreshToken(newRefreshToken) });
+
+    const safeUser = await User.findById(user._id).select("-password -refreshTokenHash");
+
+    res.status(200)
+        .cookie("jwt_refresh", newRefreshToken, options)
+        .json(
+            new ApiResponse(200, { user: safeUser, accessToken: newAccessToken }, "Access token refreshed successfully")
+        );
 });
 export const getUserImpactProfile = asyncHandler(async (req, res) => {
     const userId = req.user._id;

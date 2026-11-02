@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addAnimal, getAvailableAnimals, applyForAdoption , getNgoApplications , updateApplicationStatus , deleteAnimal } from "../Controllers/animalcontroller.js";
+import { addAnimal, getAvailableAnimals, getAnimalById, applyForAdoption , getNgoApplications , updateApplicationStatus , deleteAnimal } from "../Controllers/animalcontroller.js";
 import { verifyJWT, isNgo  } from "../middlewares/authmiddleware.js";
 import { upload } from "../middlewares/multermiddleware.js";
 
@@ -16,6 +16,10 @@ animalrouter.route("/applications").get(verifyJWT, isNgo, getNgoApplications);
 
 // 4. NGO approves/rejects an application (MUST BE BEFORE /:id ROUTES)
 animalrouter.route("/applications/:applicationId").patch(verifyJWT, isNgo, updateApplicationStatus);
+
+// Single animal detail (after "/available" and "/applications", so those
+// words are not treated as an animal id)
+animalrouter.route("/:id").get(verifyJWT, getAnimalById);
 
 // User applies for a specific animal
 animalrouter.route("/:id/apply").post(verifyJWT, applyForAdoption);

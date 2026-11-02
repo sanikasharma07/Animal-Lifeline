@@ -5,6 +5,8 @@ import { Ngo } from "../Models/ngomodel.js";
 import { DonationCampaign } from "../Models/donationmodel.js";
 import { uploadOnCloudinary } from "../Utils/cloudinary.js";
 import Razorpay from "razorpay";
+import crypto from "crypto";
+import { User } from "../Models/usermodel.js";
 
 // Created lazily (on first use) so the server still boots if the Razorpay keys
 // are missing. Only the payment endpoints need them.
@@ -45,7 +47,9 @@ export const createCampaign = asyncHandler(async (req, res) => {
 // @desc    Get all active campaigns
 // @route   GET /api/v1/donations/campaigns
 export const getActiveCampaigns = asyncHandler(async (req, res) => {
+    
     const campaigns = await DonationCampaign.find({ status: "Active" })
+        .select("-donors") 
         .populate("ngo", "organizationName")
         .sort({ createdAt: -1 });
 
@@ -98,43 +102,105 @@ export const processDonation = asyncHandler(async (req, res) => {
     );
 });
 
-// @desc    Verify Razorpay Payment and Update Campaign Funds
-// @route   POST /api/v1/donations/verify
+// @desc    Verify Razorpay Payment, record the donor and update campaign funds
+// @route   POST /api/v1/donations/campaigns/:id/verify
+// body: { razorpay_order_id, razorpay_payment_id, razorpay_signature }
+//       (all three come from Razorpay Checkout's success handler)
 export const verifyDonation = asyncHandler(async (req, res) => {
-    const { razorpay_order_id, campaignId, isCancelled } = req.body;
-    
+    const { id } = req.params; // campaign id
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, isCancelled } = req.body;
+
     // Handle user cancelling the payment window
     if (isCancelled) {
         throw new ApiError(400, "Donation payment was cancelled.");
     }
 
-    // Fetch actual payment status directly from Razorpay for security
-    const orderinfo = await getRazorpay().orders.fetch(razorpay_order_id);
-    
-    if (orderinfo.status === 'paid') {
-        const campaign = await DonationCampaign.findById(campaignId);
-        if (!campaign) {
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        throw new ApiError(400, "razorpay_order_id, razorpay_payment_id and razorpay_signature are required.");
+    }
+
+    const razorpay = getRazorpay(); // throws 503 if keys are missing
+
+    // 1. Signature check: proves this order/payment pair really came from Razorpay
+    const expected = crypto
+        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest("hex");
+    const a = Buffer.from(expected);
+    const b = Buffer.from(String(razorpay_signature));
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        throw new ApiError(400, "Payment verification failed: invalid signature.");
+    }
+
+    // 2. Re-read the order directly from Razorpay and check it belongs to this user + campaign
+    let order;
+    try {
+        order = await razorpay.orders.fetch(razorpay_order_id);
+    } catch (err) {
+        throw new ApiError(502, err?.error?.description || "Could not fetch the order from Razorpay.");
+    }
+
+    if (order.status !== "paid") {
+        throw new ApiError(400, "Payment has not been completed for this order.");
+    }
+    if (order.notes?.userId !== String(req.user._id)) {
+        throw new ApiError(403, "This payment belongs to a different user.");
+    }
+    if (order.notes?.campaignId !== String(id)) {
+        throw new ApiError(400, "This payment was made for a different campaign.");
+    }
+
+    const donationAmount = order.amount_paid / 100; // paise -> INR
+
+    // 3. Record the donation in ONE atomic step. The "$ne" guard means a payment id that is
+    //    already saved is never counted twice (refreshes, retries, webhook arriving first).
+    const updated = await DonationCampaign.findOneAndUpdate(
+        { _id: id, "donors.transactionId": { $ne: razorpay_payment_id } },
+        {
+            $push: {
+                donors: {
+                    user: req.user._id,
+                    amount: donationAmount,
+                    transactionId: razorpay_payment_id,
+                    orderId: razorpay_order_id,
+                    donatedAt: new Date(),
+                },
+            },
+            $inc: { raisedAmount: donationAmount },
+        },
+        { new: true }
+    );
+
+    if (!updated) {
+        // Either the campaign doesn't exist, or this payment was already recorded
+        const existing = await DonationCampaign.findById(id).select("-donors");
+        if (!existing) {
             throw new ApiError(404, "Campaign not found.");
         }
-
-        // Add the donation amount to the campaign (converting paisa back to INR)
-        const donationAmount = orderinfo.amount / 100;
-        campaign.raisedAmount = (campaign.raisedAmount || 0) + donationAmount;
-
-        // Automatically close campaign if target is met or exceeded
-        if (campaign.raisedAmount >= campaign.targetAmount) {
-            campaign.status = "Closed";
-        }
-
-        await campaign.save();
-
-        return res.status(200).json(
-            new ApiResponse(200, campaign, `Thank you! ₹${donationAmount} donated successfully.`)
-        );
-    } else {
-        throw new ApiError(400, "Payment verification failed.");
+        return res.status(200).json(new ApiResponse(200, existing, "This donation was already recorded."));
     }
+
+    // 4. Goal reached -> stop taking new donations
+    if (updated.status === "Active" && updated.raisedAmount >= updated.targetAmount) {
+        updated.status = "Goal Reached";
+        await updated.save();
+    }
+
+    // 5. Impact counter: +1 the first time this user funds this campaign
+    const donationsByUser = updated.donors.filter((d) => String(d.user) === String(req.user._id)).length;
+    if (donationsByUser === 1) {
+        await User.findByIdAndUpdate(req.user._id, { $inc: { "impact.campaignsFunded": 1 } });
+    }
+
+    // 6. Don't send the donor list back (it holds other people's ids and payment ids)
+    const result = updated.toObject();
+    delete result.donors;
+
+    return res.status(200).json(
+        new ApiResponse(200, result, `Thank you! ₹${donationAmount} donated successfully.`)
+    );
 });
+
 // @desc    Razorpay Webhook (Safety net for payments)
 // @route   POST /api/v1/donations/webhook
 export const razorpayWebhook = asyncHandler(async (req, res) => {

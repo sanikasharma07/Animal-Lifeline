@@ -37,6 +37,15 @@ export const isNgo = asyncHandler(async (req, res, next) => {
     }
 });
 
+// Middleware to check if the logged-in user has the vet role
+export const isVet = asyncHandler(async (req, res, next) => {
+    if (req.user && req.user.role === "vet") {
+        next();
+    } else {
+        throw new ApiError(403, "Access denied: You must be registered as a vet to perform this action");
+    }
+});
+
 export const isAdmin = asyncHandler ( async(req,res , next)=>{
     if (req.user && req.user.role === "admin") {
         next();

@@ -1,7 +1,7 @@
 import { Ngo } from "../Models/ngomodel.js";
-import { ApiError } from "../utils/ApiError.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../Utils/ApiError.js";
+import { ApiResponse } from "../Utils/ApiResponse.js";
+import { asyncHandler } from "../Utils/asynchandler.js";
 
 // @desc    Get all NGOs pending verification
 // @route   GET /api/v1/admin/ngos/pending

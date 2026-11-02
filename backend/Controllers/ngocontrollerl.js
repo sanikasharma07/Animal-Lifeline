@@ -2,6 +2,7 @@ import { asyncHandler } from "../Utils/asynchandler.js";
 import { ApiError } from "../Utils/ApiError.js";
 import { ApiResponse } from "../Utils/ApiResponse.js";
 import { Ngo } from "../Models/ngomodel.js";
+import { Vet } from "../Models/vetmodel.js";
 import { User } from "../Models/usermodel.js";
 import {uploadOnCloudinary} from "../Utils/cloudinary.js"
 
@@ -137,8 +138,11 @@ export const getVerifiedNgos = asyncHandler(async (req, res) => {
 
 // @desc    Find Verified NGOs within a 10km radius
 // @route   GET /api/v1/ngo/nearby?lng=75.8333&lat=25.1333
+// With ?includeVets=true, approved vets in the same radius are returned
+// too, as { ngos, vets } instead of a plain NGO array. Without the flag
+// the response shape is exactly as before, so existing clients keep working.
 export const getNearbyNgos = asyncHandler(async (req, res) => {
-    const { lng, lat } = req.query;
+    const { lng, lat, includeVets } = req.query;
 
     if (!lng || !lat) {
         throw new ApiError(400, "Longitude and latitude are required to find nearby NGOs.");
@@ -161,6 +165,26 @@ export const getNearbyNgos = asyncHandler(async (req, res) => {
     })
     .populate("user", "name email phone")
     .select("-documents"); // Keep sensitive docs hidden
+
+    if (includeVets === "true") {
+        const nearbyVets = await Vet.find({
+            verificationStatus: "verified",
+            location: {
+                $near: {
+                    $geometry: {
+                        type: "Point",
+                        coordinates: [parseFloat(lng), parseFloat(lat)]
+                    },
+                    $maxDistance: maxDistanceInMeters
+                }
+            }
+        })
+        .populate("user", "name email phone")
+        .select("-documents");
+        return res.status(200).json(
+            new ApiResponse(200, { ngos: nearbyNgos, vets: nearbyVets }, `Found ${nearbyNgos.length} NGOs and ${nearbyVets.length} vets nearby.`)
+        );
+    }
 
     return res.status(200).json(
         new ApiResponse(200, nearbyNgos, `Found ${nearbyNgos.length} NGOs nearby.`)

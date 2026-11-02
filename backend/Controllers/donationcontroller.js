@@ -112,6 +112,78 @@ export const verifyDonation = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Payment verification failed.");
     }
 });
+// @desc    Razorpay Webhook (Safety net for payments)
+// @route   POST /api/v1/donations/webhook
+export const razorpayWebhook = asyncHandler(async (req, res) => {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const signature = req.headers["x-razorpay-signature"];
+
+    if (!webhookSecret || !signature) {
+        throw new ApiError(400, "Webhook secret or signature missing.");
+    }
+
+    // 1. Verify the signature securely
+    // Express already parsed req.body into JSON, so we stringify it back for crypto
+    const bodyString = JSON.stringify(req.body);
+    const expectedSignature = crypto
+        .createHmac("sha256", webhookSecret)
+        .update(bodyString)
+        .digest("hex");
+
+    if (expectedSignature !== signature) {
+        throw new ApiError(400, "Invalid webhook signature.");
+    }
+
+    // 2. Process the event
+    const event = req.body.event;
+
+    if (event === "payment.captured") {
+        const payment = req.body.payload.payment.entity;
+        
+        const razorpay_payment_id = payment.id;
+        const razorpay_order_id = payment.order_id;
+        const campaignId = payment.notes?.campaignId; // Grabbed from the notes we injected during creation!
+        const userId = payment.notes?.userId;
+        const amount = payment.amount / 100; // paise -> INR
+
+        if (campaignId && userId) {
+            // 3. Exact same idempotent logic as the frontend verify route
+            // It will safely ignore the webhook if the frontend already recorded this exact transactionId.
+            const updated = await DonationCampaign.findOneAndUpdate(
+                { _id: campaignId, "donors.transactionId": { $ne: razorpay_payment_id } },
+                {
+                    $push: {
+                        donors: {
+                            user: userId,
+                            amount,
+                            transactionId: razorpay_payment_id,
+                            orderId: razorpay_order_id,
+                            donatedAt: new Date(),
+                        },
+                    },
+                    $inc: { raisedAmount: amount },
+                },
+                { new: true }
+            );
+
+            // 4. Update status and impact if the webhook was the first to record the payment
+            if (updated) {
+                if (updated.status === "Active" && updated.raisedAmount >= updated.targetAmount) {
+                    updated.status = "Goal Reached";
+                    await updated.save();
+                }
+
+                const donationsByUser = updated.donors.filter((d) => String(d.user) === String(userId)).length;
+                if (donationsByUser === 1) {
+                    await User.findByIdAndUpdate(userId, { $inc: { "impact.campaignsFunded": 1 } });
+                }
+            }
+        }
+    }
+
+    // Always return a 200 OK so Razorpay knows we received it and doesn't retry
+    return res.status(200).send("Webhook received successfully.");
+});
 
 // @desc    Delete a Fundraising Campaign
 // @route   DELETE /api/v1/donations/campaigns/:id

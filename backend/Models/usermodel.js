@@ -24,7 +24,7 @@ const userSchema= new mongoose.Schema({
    },
    role: {
             type: String,
-            enum: ["user", "ngo", "admin"],
+            enum: ["user", "ngo", "admin", "vet"],
             default: "user",
         },
    // SHA-256 hash of the current refresh token, or null when logged out.

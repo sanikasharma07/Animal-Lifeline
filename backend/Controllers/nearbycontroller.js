@@ -30,7 +30,7 @@ const shapeVet = (doc) => ({
     services: doc.servicesProvided,
     city: doc.address?.city,
     state: doc.address?.state,
-    contact: doc.contact?.[0] ? { name: doc.contact[0].name, email: doc.contact[0].email, phone: doc.contact[0].clinicPhone || doc.contact[0].phone } : null,
+    contact: doc.contact?.[0] ? { name: doc.contact[0].name, email: doc.contact[0].email, phone: doc.clinicPhone || doc.contact[0].phone } : null,
     distanceKm: Math.round((doc.distanceMeters / 1000) * 100) / 100,
 });
 
